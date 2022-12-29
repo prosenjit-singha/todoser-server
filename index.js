@@ -1,4 +1,5 @@
 require("dotenv").config();
+const jwt = require("jsonwebtoken");
 const { MongoClient, ServerApiVersion } = require("mongodb");
 const express = require("express");
 const cors = require("cors");
@@ -20,8 +21,48 @@ const client = new MongoClient(uri, {
 
 async function run() {
   try {
+    const users = client.db("todoser").collection("users");
+    app.get("/tasks", async (req, res) => {
+      try {
+        const { userId } = req.query;
+        const result = await users.find({}).toArray();
+        res.send(result);
+      } catch (error) {
+        res.sendStatus(500);
+        console.log("error", error);
+      }
+    });
+    app.post("/tasks", async (req, res) => {
+      try {
+        const { userId } = req.query;
+        const result = await users.updateOne();
+      } catch (error) {
+        res.sendStatus(500);
+        console.log(error);
+      }
+    });
   } finally {
   }
+}
+
+app.post("/get-access-token", (req, res) => {
+  const { uid, email } = req.body;
+  console.log(uid, email);
+  console.log(req.query.uid);
+  const token = jwt.sign({ uid, email }, process.env.JWT_SECRET);
+  res.send({ token });
+});
+
+function verifyToken(req, res, next) {
+  const authHeader = req.headers.authorization;
+  const token = authHeader && authHeader.split(" ")[1];
+  if (!token) return res.sendStatus(401);
+
+  jwt.verify(token, process.env.JWT_SECRET, (error, decoded) => {
+    if (error) return res.sendStatus(403);
+    req.decoded = decoded;
+    next();
+  });
 }
 
 run().catch((err) => console.log(err));
