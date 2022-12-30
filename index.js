@@ -1,6 +1,6 @@
 require("dotenv").config();
 const jwt = require("jsonwebtoken");
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const express = require("express");
 const cors = require("cors");
 const app = express();
@@ -21,37 +21,64 @@ const client = new MongoClient(uri, {
 
 async function run() {
   try {
-    const users = client.db("todoser").collection("users");
-    app.get("/tasks", async (req, res) => {
+    const userCollection = client.db("todoser").collection("users");
+    app.get("/tasks", verifyToken, async (req, res) => {
       try {
-        const { userId } = req.query;
-        const result = await users.find({}).toArray();
-        res.send(result);
+        const { uid } = req.query;
+        if (uid !== req.decoded.uid) return res.sendStatus(403);
+
+        const data = await userCollection.findOne({ uid });
+
+        res.send(data.tasks);
       } catch (error) {
         res.sendStatus(500);
         console.log("error", error);
       }
     });
-    app.post("/tasks", async (req, res) => {
+
+    app.post("/tasks", verifyToken, async (req, res) => {
       try {
-        const { userId } = req.query;
-        const result = await users.updateOne();
+        const { uid } = req.query;
+        if (uid !== req.decoded.uid) return res.sendStatus(403);
+        const payload = req.body;
+        const result = await userCollection.updateOne(
+          { uid },
+          {
+            $set: {
+              tasks: payload,
+            },
+          },
+          {
+            upsert: true,
+          }
+        );
+
+        res.send(result);
       } catch (error) {
         res.sendStatus(500);
         console.log(error);
       }
     });
+
+    app.post("/get-access-token", async (req, res) => {
+      try {
+        const { uid, email } = req.body;
+        const user = {
+          uid,
+          email,
+          tasks: [],
+        };
+        const record = await userCollection.findOne({ uid });
+        if (!record) await userCollection.insertOne(user);
+        const token = jwt.sign({ uid, email }, process.env.JWT_SECRET);
+        return res.send({ token });
+      } catch (error) {
+        res.sendStatus(500);
+      }
+    });
   } finally {
   }
 }
-
-app.post("/get-access-token", (req, res) => {
-  const { uid, email } = req.body;
-  console.log(uid, email);
-  console.log(req.query.uid);
-  const token = jwt.sign({ uid, email }, process.env.JWT_SECRET);
-  res.send({ token });
-});
 
 function verifyToken(req, res, next) {
   const authHeader = req.headers.authorization;
